@@ -10,7 +10,7 @@ Should be thread-safe.
 Usage
 -----
 
-python misster.py <mountpoint> -r <source> -c <cachedir>
+`python misster.py <mountpoint> -r <source> -c <cachedir>`
 
 Licence
 -------
