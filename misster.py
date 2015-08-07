@@ -20,6 +20,13 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
+class MutableStatResult():
+	"""Mirrors a os.stat_result object but with mutable properties."""
+	def __init__(self, stat_result):
+		for p in filter(lambda p: not p.startswith('_'), dir(stat_result)):
+			setattr(self, p, getattr(stat_result, p))
+
+
 class SynchronizedCache:
 	"""Provides threadsafe in-memory key-value storage."""
 
@@ -52,6 +59,15 @@ class DescriptorCache(SynchronizedCache):
 
 class Misster(fuse.Fuse):
 
+	def readdir(self, path, offset):
+		logger.debug('readdir(%s)' % (path))
+
+		entry = tree_cache.get(path)
+		contents = entry.contents if entry else []
+		directories = ['.', '..'] + contents
+		for directory in directories:
+			yield fuse.Direntry(directory)
+
 	def getattr(self, path):
 		logger.debug('getattr(%s)' % (path))
 
@@ -73,13 +89,12 @@ class Misster(fuse.Fuse):
 		s.st_ctime = entry.stat.st_ctime # (time of most recent metadata change)
 
 		return s
-
+	
 	def open(self, path, flags):
-		logger.debug('open(%s, %r)' % (path, flags))
+		logger.debug('open(%s, %d)' % (path, flags))
 
 		# Caching
-		key = hashlib.sha1(path).hexdigest()
-		cache_file = cache_path + key[:2] + '/' + key[2:]
+		cache_file = self.get_cache_file(path)
 		if not os.access(cache_file, os.F_OK | os.R_OK | os.W_OK):
 			os.makedirs('/'.join(cache_file.split('/')[:-1]), mode=0700)
 			logger.debug('copied %s to cache at %s' % (path, cache_file))
@@ -88,29 +103,72 @@ class Misster(fuse.Fuse):
 		else:
 			logger.debug('cache hit %s for %s' % (cache_file, path))
 
-		descriptor_cache.set(path, os.fdopen(os.open(cache_file, flags)))
-		return descriptor_cache.get(path)
+		humanflags = ('r' if flags & os.O_RDONLY else '') + ('w' if flags & os.O_WRONLY else '') + ('a' if flags & os.O_APPEND else '')
+		if not humanflags:
+			humanflags = 'r'
 
-	def release(self, path, flags, f):
+		filehandle = os.fdopen(os.open(cache_file, flags), humanflags)
+
+		descriptor_cache.set(path, filehandle)
+		return filehandle
+
+	def release(self, path, flags, f=None):
 		logger.debug('release(%s, %r, %r)' % (path, flags, f))
 		f = descriptor_cache.get(path)
 		f.close()
 
-	def readdir(self, path, offset):
-		logger.debug('readdir(%s)' % (path))
-
+		# Update changed cached attributes immediately
 		entry = tree_cache.get(path)
-		contents = entry.contents if entry else []
-		directories = ['.', '..'] + contents
-		for directory in directories:
-			yield fuse.Direntry(directory)
+		stat = MutableStatResult(os.stat(self.get_cache_file(path)))
+		entry.stat.st_size = stat.st_size
+		tree_cache.set(path, entry)
 
-	def read(self, path, length, offset, f):
-		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, f))
+		logger.debug('updated st_size to %d for %s' % (tree_cache.get(path).stat.st_size, path))
+
+		# Schedule a sync (TODO: in another thread, don't block the release)
+
+	def read(self, path, length, offset, filehandle):
+		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, filehandle))
 		f = descriptor_cache.get(path)
 		f.seek(offset)
 		return f.read(length)
 
+	def write(self, path, data, offset, filehandle):
+		logger.debug('write(%s, %d bytes, %d, %r)' % (path, len(data), offset, filehandle))
+		f = descriptor_cache.get(path)
+		f.seek(offset)
+		f.write(data)
+
+		# Update changed cached attributes immediately (unflushed)
+		entry = tree_cache.get(path)
+		stat = MutableStatResult(os.stat(self.get_cache_file(path)))
+		entry.stat.st_size = stat.st_size
+		tree_cache.set(path, entry)
+
+		logger.debug('updated st_size to %d for %s' % (tree_cache.get(path).stat.st_size, path))
+
+		return len(data)
+
+	def mknod(self, path, mode, dev):
+		logger.debug('mknod(%s, %r, %r)' % (path, mode, dev))
+		node = os.mknod(root + path, mode, dev)
+
+		# Update attributes in the tree cache
+		entry = fuse.Direntry(path.split('/')[-1])
+		entry.type = stat.S_IFREG
+		entry.stat = MutableStatResult(os.stat(root + path))
+		tree_cache.set(path, entry)
+
+		return node
+	
+	def truncate(self, path, offset):
+		logger.debug('truncate(%s, %d)' % (path, offset))
+		f = descriptor_cache.get(path)
+		f.truncate(offset)
+
+	def get_cache_file(self, path):
+		key = hashlib.sha1(path).hexdigest()
+		return cache_path + key[:2] + '/' + key[2:]
 
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
@@ -148,13 +206,13 @@ if __name__ == '__main__':
 		if not entry.name:
 			entry.name = '.'
 		entry.contents = dirs + files
-		entry.stat = os.stat(root + path)
+		entry.stat = MutableStatResult(os.stat(root + path))
 		tree_cache.set(path.rstrip('/') or '/', entry)
 
 		for f in files:
 			entry = fuse.Direntry(f)
 			entry.type = stat.S_IFREG
-			entry.stat = os.stat(root + path + f)
+			entry.stat = MutableStatResult(os.stat(root + path + f))
 			tree_cache.set(path + f, entry)
 
 	logger.info('Cached %d tree elements' % len(tree_cache.storage))
