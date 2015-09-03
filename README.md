@@ -12,6 +12,11 @@ Usage
 
 `python misster.py <mountpoint> -r <source> -c <cachedir>`
 
+Testing
+-------
+
+`python -m unittest -v tests`
+
 Licence
 -------
 

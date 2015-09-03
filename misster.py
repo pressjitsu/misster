@@ -213,7 +213,7 @@ if __name__ == '__main__':
 	m = Misster()
 	m.parser.add_option('-c', dest='cache_path', help='local file cache directory')
 	m.parser.add_option('-r', dest='rootpoint', help='source mount root')
-	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default=1)
+	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default='1')
 	m.parse(errex=True)
 
 	cache_path = m.cmdline[0].cache_path
