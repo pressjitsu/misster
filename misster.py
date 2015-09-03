@@ -4,11 +4,11 @@ capabilities and pretty logic.
 miss + gluster = misster
 """
 
-import sys, stat, time, logging, os, errno
-import hashlib, shutil
-from threading import Lock
-
 import fuse
+import sys, stat, time, logging, os, errno, signal
+import hashlib, shutil
+from threading import Lock, Thread
+from Queue import Queue
 	
 fuse.fuse_python_api = (0, 2)
 
@@ -125,7 +125,7 @@ class Misster(fuse.Fuse):
 
 		logger.debug('updated st_size to %d for %s' % (tree_cache.get(path).stat.st_size, path))
 
-		# Schedule a sync (TODO: in another thread, don't block the release)
+		background.do('sync', path=path, cache_file=self.get_cache_file(path))
 
 	def read(self, path, length, offset, filehandle):
 		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, filehandle))
@@ -151,7 +151,7 @@ class Misster(fuse.Fuse):
 
 	def mknod(self, path, mode, dev):
 		logger.debug('mknod(%s, %r, %r)' % (path, mode, dev))
-		node = os.mknod(root + path, mode, dev)
+		node = os.mknod(root + path, mode, dev) # Source filesystem
 
 		# Update attributes in the tree cache
 		entry = fuse.Direntry(path.split('/')[-1])
@@ -170,6 +170,42 @@ class Misster(fuse.Fuse):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
 
+
+class BackgroundWorker:
+	"""Does stuff"""
+
+	tasks = None
+
+	def __init__(self, threads=1):
+		self.tasks = Queue()
+		for t in range(threads):
+			t = Thread(target=self.start)
+			t.daemon = True
+			t.start()
+
+	def start(self):
+		while True:
+			task = self.tasks.get()	
+			logger.debug('Doing %r' % task)
+
+			try:
+				getattr(self, 'task_' + task.get('task', None))(**task.get('args', {}))
+				logger.debug('Done %r' % task)
+			except AttributeError:
+				logger.error('Unknown task %r' % task)
+			finally:
+				self.tasks.task_done()
+
+	def do(self, task, **kwargs):
+		self.tasks.put({'task': task, 'args': kwargs})
+
+	def task_sync(self, path, cache_file):
+		'''Copies content, stat info'''
+		root_file = root + path
+		logger.debug('Syncing %s to %s' % (cache_file, root_file))
+		shutil.copy(cache_file, root_file)
+		os.chmod(root_file, tree_cache.get(path).stat.st_mode)
+
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
 
@@ -177,10 +213,12 @@ if __name__ == '__main__':
 	m = Misster()
 	m.parser.add_option('-c', dest='cache_path', help='local file cache directory')
 	m.parser.add_option('-r', dest='rootpoint', help='source mount root')
+	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default=1)
 	m.parse(errex=True)
 
 	cache_path = m.cmdline[0].cache_path
 	root = m.cmdline[0].rootpoint
+	threads = int(m.cmdline[0].threads, 10)
 
 	# Validate options and cleanup
 	if not cache_path or not os.access(cache_path, os.F_OK | os.R_OK | os.W_OK | os.X_OK ):
@@ -216,6 +254,10 @@ if __name__ == '__main__':
 			tree_cache.set(path + f, entry)
 
 	logger.info('Cached %d tree elements' % len(tree_cache.storage))
+
+	print('Starting %d background workers...' % threads)
+
+	background = BackgroundWorker(threads)
 
 	print('Mounting...')
 
