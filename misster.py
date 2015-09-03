@@ -261,4 +261,6 @@ if __name__ == '__main__':
 
 	print('Mounting...')
 
-	m.main()
+	h = signal.signal(signal.SIGINT, signal.SIG_DFL)
+	m.main() # Allow clean Ctrl+C
+	signal.signal(signal.SIGINT, h)
