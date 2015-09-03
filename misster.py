@@ -96,7 +96,11 @@ class Misster(fuse.Fuse):
 		# Caching
 		cache_file = self.get_cache_file(path)
 		if not os.access(cache_file, os.F_OK | os.R_OK | os.W_OK):
-			os.makedirs('/'.join(cache_file.split('/')[:-1]), mode=0700)
+			try:
+				os.makedirs('/'.join(cache_file.split('/')[:-1]), mode=0700)
+			except OSError as e: # Suppress existing directories
+				if e.errno != errno.EEXIST:
+					raise
 			logger.debug('copied %s to cache at %s' % (path, cache_file))
 			shutil.copy(root + path, cache_file)
 			os.chmod(cache_file, 0600)
