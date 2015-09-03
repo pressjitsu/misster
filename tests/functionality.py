@@ -22,6 +22,10 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		open(self.tmp_path + '/source/level1/level2/file0', 'wb').write('In the yellow...')
 		open(self.tmp_path + '/source/level1/level2/file1', 'wb').write('Submarine!')
 
+		os.chmod(self.tmp_path + '/source/level1/level2/file1', 0600)
+		os.chmod(self.tmp_path + '/source/level1/', 0750)
+
+		# Launch our FUSE service
 		self.misster = subprocess.Popen([sys.executable, 'misster.py', self.tmp_path + '/mount', '-c', self.tmp_path + '/cache', '-r', self.tmp_path + '/source', '-f'])
 		time.sleep(1) # TODO: tcl/expect
 
