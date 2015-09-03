@@ -12,6 +12,8 @@ Usage
 
 `python misster.py <mountpoint> -r <source> -c <cachedir>`
 
+Add more background threading capacity by supplying the`-t` option.
+
 Testing
 -------
 
