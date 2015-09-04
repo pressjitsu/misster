@@ -222,7 +222,7 @@ class BackgroundWorker:
 		self.tasks.put({'task': task, 'args': kwargs})
 
 	def task_sync(self, path, cache_file):
-		'''Copies content, stat info'''
+		"""Copies content, stat info"""
 		root_file = root + path
 		logger.debug('Syncing %s to %s' % (cache_file, root_file))
 

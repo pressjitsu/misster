@@ -38,7 +38,7 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		shutil.rmtree(self.tmp_path)
 
 	def test_000_list_structure(self):
-		'''Make sure the source tree is mirrored properly in the mount'''
+		"""Make sure the source tree is mirrored properly in the mount"""
 		expect = []
 		source_root = self.tmp_path + '/source'
 		for path, dirs, files in os.walk(source_root):
@@ -58,7 +58,7 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		self.assertItemsEqual(get, expect)
 
 	def test_001_list_attributes(self):
-		'''Make sure all file attributes and permissions match'''
+		"""Make sure all file attributes and permissions match"""
 
 		# Equality assertion for stat_results
 		def assertStatEqual(a, b, msg=None):
@@ -74,7 +74,7 @@ class TestMissterOperationsLocal(unittest.TestCase):
 				self.assertEqual(os.stat(path + '/' + f), os.stat(mount_path + f))
 
 	def test_002_read_file(self):
-		'''Compare file contents'''
+		"""Compare file contents"""
 		source_root = self.tmp_path + '/source'
 		for path, dirs, files in os.walk(source_root):
 			mount_path = self.tmp_path + '/mount/' + path.replace(source_root, '', 1).rstrip('/') + '/'
@@ -82,26 +82,26 @@ class TestMissterOperationsLocal(unittest.TestCase):
 				self.assertEqual(open(path + '/' + f).read(), open(mount_path + f).read())
 
 	def test_003_append_file(self):
-		'''Append to file and make sure it has been updated in the source'''
+		"""Append to file and make sure it has been updated in the source"""
 		open(self.tmp_path + '/mount/file1', 'a').write('NOT') # Append to existing file
 		time.sleep(1) # Wait for the thread
 		self.assertEqual(open(self.tmp_path + '/source/file1').read(), open(self.tmp_path + '/mount/file1').read())
 	
 	def test_004_write_file(self):
-		'''Write a new file and make sure it has been updated in the source'''
+		"""Write a new file and make sure it has been updated in the source"""
 		open(self.tmp_path + '/mount/file3', 'w').write('We all live in the yellow submarine...') # Append to existing file
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertEqual(open(self.tmp_path + '/source/file3').read(), open(self.tmp_path + '/mount/file3').read())
 
 	def test_005_truncate_file(self):
-		'''Make sure the file is trunctated properly'''
+		"""Make sure the file is trunctated properly"""
 		open(self.tmp_path + '/mount/file3', 'w').truncate() # Truncate file
 		self.assertEqual(open(self.tmp_path + '/mount/file3').read(), '')
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertEqual(open(self.tmp_path + '/source/file3').read(), '')
 
 	def test_006_delete_file(self):
-		'''Removing a file works'''
+		"""Removing a file works"""
 		os.remove(self.tmp_path + '/mount/file2')
 		self.assertFalse(os.path.exists(self.tmp_path + '/mount/file2'))
 		time.sleep(1) # Wait for the background thread to update the file
