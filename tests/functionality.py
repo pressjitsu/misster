@@ -96,6 +96,13 @@ class TestMissterOperationsLocal(unittest.TestCase):
 	def test_005_truncate_file(self):
 		'''Make sure the file is trunctated properly'''
 		open(self.tmp_path + '/mount/file3', 'w').truncate() # Truncate file
+		self.assertEqual(open(self.tmp_path + '/mount/file3').read(), '')
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertEqual(open(self.tmp_path + '/source/file3').read(), '')
-		self.assertEqual(open(self.tmp_path + '/source/file3').read(), open(self.tmp_path + '/mount/file3').read())
+
+	def test_006_delete_file(self):
+		'''Removing a file works'''
+		os.remove(self.tmp_path + '/mount/file2')
+		self.assertFalse(os.path.exists(self.tmp_path + '/mount/file2'))
+		time.sleep(1) # Wait for the background thread to update the file
+		self.assertFalse(os.path.exists(self.tmp_path + '/source/file2'))

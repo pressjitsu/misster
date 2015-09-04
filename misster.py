@@ -35,7 +35,7 @@ class SynchronizedCache:
 		self.lock = Lock()
 	
 	def get(self, key, default=None):
-		"""Get an entry from tree_cache."""
+		"""Get an entry from cache."""
 		with self.lock:
 			return self.storage.get(key, default)
 	
@@ -43,6 +43,12 @@ class SynchronizedCache:
 		"""Set cache entry."""
 		with self.lock:
 			self.storage[key] = value
+	
+	def remove(self, key):
+		"""Remove a cache entry."""
+		with self.lock:
+			if self.storage.get(key, False):
+				del self.storage[key]
 
 
 class TreeCache(SynchronizedCache):
@@ -170,6 +176,18 @@ class Misster(fuse.Fuse):
 		f = descriptor_cache.get(path)
 		f.truncate(offset)
 
+	def unlink(self, path):
+		logger.debug('unlink(%s)' % (path,))
+		
+		# Update tree cache
+		tree_cache.remove(path)
+
+		# Remove cache file
+		os.remove(self.get_cache_file(path))
+
+		# Sync with backend
+		background.do('sync', path=path, cache_file=self.get_cache_file(path))
+
 	def get_cache_file(self, path):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
@@ -207,8 +225,12 @@ class BackgroundWorker:
 		'''Copies content, stat info'''
 		root_file = root + path
 		logger.debug('Syncing %s to %s' % (cache_file, root_file))
-		shutil.copy(cache_file, root_file)
-		os.chmod(root_file, tree_cache.get(path).stat.st_mode)
+
+		if not os.path.exists(cache_file):
+			os.remove(root_file)
+		else:
+			shutil.copy(cache_file, root_file)
+			os.chmod(root_file, tree_cache.get(path).stat.st_mode)
 
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
