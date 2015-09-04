@@ -106,3 +106,12 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		self.assertFalse(os.path.exists(self.tmp_path + '/mount/file2'))
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertFalse(os.path.exists(self.tmp_path + '/source/file2'))
+
+	def test_007_mknod(self):
+		"""A created file should appear in the tree and the source with the correct permissions"""
+		os.mknod(self.tmp_path + '/mount/file4', 0640)
+		self.assertIn('file4', os.listdir(self.tmp_path + '/mount/'))
+		self.assertEqual(os.stat(self.tmp_path + '/mount/file4').st_mode & 0777, 0640)
+		time.sleep(1)
+		self.assertIn('file4', os.listdir(self.tmp_path + '/source/'))
+		self.assertEqual(os.stat(self.tmp_path + '/source/file4').st_mode & 0777, 0640)

@@ -160,14 +160,32 @@ class Misster(fuse.Fuse):
 		return len(data)
 
 	def mknod(self, path, mode, dev):
-		logger.debug('mknod(%s, %r, %r)' % (path, mode, dev))
-		node = os.mknod(root + path, mode, dev) # Source filesystem
+		logger.debug('mknod(%s, %s, %r)' % (path, oct(mode), dev))
+
+		# Create cache entry
+		cache_file = self.get_cache_file(path)
+		try:
+			os.makedirs('/'.join(cache_file.split('/')[:-1]), mode=0700)
+		except OSError as e: # Suppress existing directories
+			if e.errno != errno.EEXIST:
+				raise
+		node = os.mknod(cache_file, 0600)
+
+		# Parent
+		parent = tree_cache.get(os.path.dirname(path))
 
 		# Update attributes in the tree cache
-		entry = fuse.Direntry(path.split('/')[-1])
+		entry = fuse.Direntry(os.path.basename(path))
 		entry.type = stat.S_IFREG
-		entry.stat = MutableStatResult(os.stat(root + path))
+		entry.stat = MutableStatResult(os.stat(cache_file))
+		entry.stat.st_mode = mode # Overwrite mode
 		tree_cache.set(path, entry)
+
+		# Update parent tree contents
+		parent.contents.append(entry.name)
+
+		# Sync to backend in background
+		background.do('sync', path=path, cache_file=cache_file)
 
 		return node
 	
@@ -265,7 +283,7 @@ if __name__ == '__main__':
 	# Walk the tree getting the stats
 	for path, dirs, files in os.walk(root):
 		path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
-		entry = fuse.Direntry(path.split('/')[-1])
+		entry = fuse.Direntry(os.path.basename(path))
 		entry.type = stat.S_IFDIR
 		if not entry.name:
 			entry.name = '.'
