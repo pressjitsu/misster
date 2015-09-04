@@ -104,8 +104,10 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		"""Removing a file works"""
 		os.remove(self.tmp_path + '/mount/file2')
 		self.assertFalse(os.path.exists(self.tmp_path + '/mount/file2'))
+		self.assertNotIn('file2', os.listdir(self.tmp_path + '/mount/'))
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertFalse(os.path.exists(self.tmp_path + '/source/file2'))
+		self.assertNotIn('file2', os.listdir(self.tmp_path + '/source/'))
 
 	def test_007_mknod(self):
 		"""A created file should appear in the tree and the source with the correct permissions"""

@@ -197,8 +197,9 @@ class Misster(fuse.Fuse):
 	def unlink(self, path):
 		logger.debug('unlink(%s)' % (path,))
 		
-		# Update tree cache
+		# Update tree cache and parent
 		tree_cache.remove(path)
+		tree_cache.get(os.path.dirname(path)).contents.remove(os.path.basename(path))
 
 		# Remove cache file
 		os.remove(self.get_cache_file(path))
