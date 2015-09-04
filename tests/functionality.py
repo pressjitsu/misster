@@ -92,3 +92,10 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		open(self.tmp_path + '/mount/file3', 'w').write('We all live in the yellow submarine...') # Append to existing file
 		time.sleep(1) # Wait for the background thread to update the file
 		self.assertEqual(open(self.tmp_path + '/source/file3').read(), open(self.tmp_path + '/mount/file3').read())
+
+	def test_005_truncate_file(self):
+		'''Make sure the file is trunctated properly'''
+		open(self.tmp_path + '/mount/file3', 'w').truncate() # Truncate file
+		time.sleep(1) # Wait for the background thread to update the file
+		self.assertEqual(open(self.tmp_path + '/source/file3').read(), '')
+		self.assertEqual(open(self.tmp_path + '/source/file3').read(), open(self.tmp_path + '/mount/file3').read())
