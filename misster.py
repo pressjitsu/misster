@@ -6,7 +6,7 @@ miss + gluster = misster
 
 import fuse
 import sys, stat, time, logging, os, errno, signal
-import hashlib, shutil
+import hashlib, shutil, subprocess
 from threading import Lock, Thread
 from Queue import Queue
 	
@@ -41,6 +41,10 @@ class SynchronizedCache:
 		with self.lock:
 			if self.storage.get(key, False):
 				del self.storage[key]
+	
+	def storage(self):
+		"""Unsynchronized storage dictionary."""
+		return self.storage
 
 
 class TreeCache(SynchronizedCache):
@@ -257,6 +261,7 @@ class Misster(fuse.Fuse):
 		# Sync with backend
 		background.do('syncmod', path=path)
 
+	@classmethod
 	def get_cache_file(self, path):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
@@ -316,6 +321,34 @@ class BackgroundWorker:
 
 		os.chmod(root + path, os.stat(mountpoint + path).st_mode & 0777)
 
+
+class CacheClearer(Thread):
+	"""Makes sure cache diskspace usage has not overflown"""
+	daemon = True
+
+	def run(self):
+		while True:
+			# Get diskspace usage
+			du = int(subprocess.check_output(['du', '-bs', cache_path], shell=False).split()[0])
+			logger.debug('Cache directory size %d/%d bytes' % (du, cache_limit))
+			if cache_limit < du:
+				down = int(cache_limit * 0.8)
+				logger.debug('...cleaning down to %d bytes' % down)
+
+				removed = 0
+				# Sort through the items to find least recently accessed or modified
+				for path in filter(lambda s: tree_cache.get(s).type == stat.S_IFREG, sorted(tree_cache.storage, key=lambda s: max(tree_cache.get(s).stat.st_mtime, tree_cache.get(s).stat.st_atime))):
+					cache_file = Misster.get_cache_file(path)
+					if not os.path.exists(cache_file):
+						continue
+					os.remove(cache_file)
+					removed = removed + tree_cache.get(path).stat.st_size
+					if removed > (du - down):
+						break
+				logger.debug('Removed %d bytes from cache' % removed)
+			time.sleep(60) # ...every 60 seconds
+	
+
 if __name__ == '__main__':
 	# Parse arguments
 	m = Misster()
@@ -323,12 +356,14 @@ if __name__ == '__main__':
 	m.parser.add_option('-r', dest='rootpoint', help='source mount root')
 	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default='1')
 	m.parser.add_option('-l', dest='log', help='log file', default='/tmp/misster.log')
+	m.parser.add_option('-m', dest='limit', help='cache size limit in bytes', default='1000000000')
 	m.parse(errex=True)
 
 	cache_path = m.cmdline[0].cache_path
 	root = m.cmdline[0].rootpoint
 	threads = int(m.cmdline[0].threads, 10)
 	log_file = m.cmdline[0].log
+	cache_limit = int(m.cmdline[0].limit, 10)
 	mountpoint = m.fuse_args.mountpoint
 
 	# Validate options and cleanup
@@ -339,6 +374,8 @@ if __name__ == '__main__':
 		m.parser.error('Invalid source mount root')
 	if not os.access(log_file, os.F_OK | os.R_OK | os.W_OK ):
 		m.parser.error('Invalid log file')
+	if cache_limit < 0:
+		m.parser.error('Cache size limit should be 0 or more bytes')
 	root = root.rstrip('/') + '/'
 
 	# Logging
@@ -381,6 +418,7 @@ if __name__ == '__main__':
 	print('Starting %d background workers...' % threads)
 
 	background = BackgroundWorker(threads)
+	CacheClearer().start()
 
 	print('Mounting...')
 

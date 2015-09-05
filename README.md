@@ -12,7 +12,9 @@ Usage
 
 `python misster.py <mountpoint> -r <source> -c <cachedir>`
 
-Add more background threading capacity by supplying the`-t` option.
+Cache directory size limit `-m BYTES`, default is 1G.
+
+Add more background threading capacity by supplying the`-t` option (highly experimental, will probably mess up ordering of operations on the same file due to race conditions).
 
 Add `-o allow_other,default_permissions` if intending to use across users (recommended).
 
