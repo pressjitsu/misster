@@ -14,6 +14,8 @@ Usage
 
 Add more background threading capacity by supplying the`-t` option.
 
+Add `-o allow_other,default_permissions` if intending to use across users (recommended).
+
 Testing
 -------
 

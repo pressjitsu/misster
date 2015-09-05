@@ -170,7 +170,9 @@ class Misster(fuse.Fuse):
 		entry = fuse.Direntry(os.path.basename(path))
 		entry.type = stat.S_IFREG
 		entry.stat = MutableStatResult(os.stat(cache_file))
-		entry.stat.st_mode = mode # Overwrite mode
+		entry.stat.st_mode = mode # Overwrite mode and ownership
+		entry.stat.st_uid = self.GetContext().get('uid', entry.stat.st_uid)
+		entry.stat.st_gid = self.GetContext().get('gid', entry.stat.st_gid)
 		tree_cache.set(path, entry)
 
 		# Update parent tree contents
@@ -207,7 +209,9 @@ class Misster(fuse.Fuse):
 		entry.type = stat.S_IFDIR
 		entry.contents = []
 		entry.stat = MutableStatResult(os.stat(os.path.dirname(mountpoint + path))) # Inherit parent but change mode and time
-		entry.stat.st_mode = mode # Overwrite mode
+		entry.stat.st_mode = mode # Overwrite mode and ownership
+		entry.stat.st_uid = self.GetContext().get('uid', entry.stat.st_uid)
+		entry.stat.st_gid = self.GetContext().get('gid', entry.stat.st_gid)
 		entry.stat.st_atime = entry.stat.st_mtime = entry.stat.st_ctime = time.time()
 
 		tree_cache.set(path, entry)
@@ -293,8 +297,7 @@ class BackgroundWorker:
 		if remove:
 			os.rmdir(root_dir)
 		else:
-			os.mkdir(root_dir)
-			os.chmod(root_dir, os.stat(mountpoint + path).st_mode & 0777)
+			os.mkdir(root_dir, os.stat(mountpoint + path).st_mode & 0777)
 
 	def task_syncmod(self, path):
 		logger.debug('Syncing %s' % (path,))

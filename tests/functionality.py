@@ -119,13 +119,15 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		self.assertEqual(os.stat(self.tmp_path + '/source/file4').st_mode & 0777, 0640)
 
 	def test_008_create_dir(self):
-		"""Creating a directory should work without any issues"""
-		os.makedirs(self.tmp_path + '/mount/level4/level5/level6/')
+		"""Creating a directory should work without any issues and correct permissions"""
+		os.makedirs(self.tmp_path + '/mount/level4/level5/level6/', 0700)
 		self.assertIn('level4', os.listdir(self.tmp_path + '/mount/'))
 		self.assertIn('level5', os.listdir(self.tmp_path + '/mount/level4'))
 		self.assertIn('level6', os.listdir(self.tmp_path + '/mount/level4/level5'))
+		self.assertEqual(os.stat(self.tmp_path + '/mount/level4/level5/level6').st_mode & 0777, 0700)
 		time.sleep(1)
 		self.assertTrue(os.path.exists(self.tmp_path + '/source/level4/level5/level6'))
+		self.assertEqual(os.stat(self.tmp_path + '/source/level4/level5/level6').st_mode & 0777, 0700)
 
 	def test_009_rmdir(self):
 		"""Removing a directory possible, most times"""
