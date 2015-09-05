@@ -207,6 +207,26 @@ class Misster(fuse.Fuse):
 		# Sync with backend
 		background.do('sync', path=path, cache_file=self.get_cache_file(path))
 
+	def mkdir(self, path, mode):
+		logger.debug('mkdir(%s, %s)' % (path, oct(mode)))
+
+		# Update attributes in the tree cache
+		entry = fuse.Direntry(os.path.basename(path))
+		entry.type = stat.S_IFDIR
+		entry.contents = []
+		entry.stat = MutableStatResult(os.stat(os.path.dirname(mountpoint + path))) # Inherit parent but change mode and time
+		entry.stat.st_mode = mode # Overwrite mode
+		entry.stat.st_atime = entry.stat.st_mtime = entry.stat.st_ctime = time.time()
+
+		tree_cache.set(path, entry)
+
+		# Update parent tree
+		parent = tree_cache.get(os.path.dirname(path))
+		parent.contents.append(entry.name)
+
+		# Offload backend creation to background
+		background.do('syncdir', path=path)
+
 	def get_cache_file(self, path):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
@@ -249,7 +269,15 @@ class BackgroundWorker:
 			os.remove(root_file)
 		else:
 			shutil.copy(cache_file, root_file)
-			os.chmod(root_file, tree_cache.get(path).stat.st_mode)
+			os.chmod(root_file, tree_cache.get(path).stat.st_mode & 0777)
+
+	def task_syncdir(self, path):
+		logger.debug('Syncing %s' % (path,))
+
+		root_dir = root + path
+
+		os.mkdir(root_dir)
+		os.chmod(root_dir, os.stat(mountpoint + path).st_mode & 0777)
 
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
@@ -264,6 +292,7 @@ if __name__ == '__main__':
 	cache_path = m.cmdline[0].cache_path
 	root = m.cmdline[0].rootpoint
 	threads = int(m.cmdline[0].threads, 10)
+	mountpoint = m.fuse_args.mountpoint
 
 	# Validate options and cleanup
 	if not cache_path or not os.access(cache_path, os.F_OK | os.R_OK | os.W_OK | os.X_OK ):
