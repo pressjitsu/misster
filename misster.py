@@ -12,14 +12,6 @@ from Queue import Queue
 	
 fuse.fuse_python_api = (0, 2)
 
-# Logging
-logger = logging.getLogger('misster')
-handler = logging.FileHandler('/tmp/misster.log')
-formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s (%(module)s.%(funcName)s:%(lineno)d %(threadName)s)')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
-
 class MutableStatResult():
 	"""Mirrors a os.stat_result object but with mutable properties."""
 	def __init__(self, stat_result):
@@ -310,18 +302,18 @@ class BackgroundWorker:
 		os.chmod(root + path, os.stat(mountpoint + path).st_mode & 0777)
 
 if __name__ == '__main__':
-	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
-
 	# Parse arguments
 	m = Misster()
 	m.parser.add_option('-c', dest='cache_path', help='local file cache directory')
 	m.parser.add_option('-r', dest='rootpoint', help='source mount root')
 	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default='1')
+	m.parser.add_option('-l', dest='log', help='log file', default='/tmp/misster.log')
 	m.parse(errex=True)
 
 	cache_path = m.cmdline[0].cache_path
 	root = m.cmdline[0].rootpoint
 	threads = int(m.cmdline[0].threads, 10)
+	log_file = m.cmdline[0].log
 	mountpoint = m.fuse_args.mountpoint
 
 	# Validate options and cleanup
@@ -330,7 +322,19 @@ if __name__ == '__main__':
 	cache_path = cache_path.rstrip('/') + '/'
 	if not root or not os.access(root, os.F_OK | os.R_OK | os.W_OK | os.X_OK ):
 		m.parser.error('Invalid source mount root')
+	if not os.access(log_file, os.F_OK | os.R_OK | os.W_OK ):
+		m.parser.error('Invalid log file')
 	root = root.rstrip('/') + '/'
+
+	# Logging
+	logger = logging.getLogger('misster')
+	handler = logging.FileHandler(log_file)
+	formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s (%(module)s.%(funcName)s:%(lineno)d %(threadName)s)')
+	handler.setFormatter(formatter)
+	logger.addHandler(handler)
+	logger.setLevel(logging.DEBUG)
+
+	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
 
 	print('Warming tree cache up. Might take a while...')
 
