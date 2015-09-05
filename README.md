@@ -21,6 +21,11 @@ Testing
 
 `python -m unittest -v tests`
 
+Notes
+-----
+
+The source layer cannot be used concurrently by several entities. The caching layer will become unsynchronised if changes are done outside of misster's target mount.
+
 Licence
 -------
 
