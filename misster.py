@@ -227,6 +227,22 @@ class Misster(fuse.Fuse):
 		# Offload backend creation to background
 		background.do('syncdir', path=path)
 
+	def rmdir(self, path):
+		logger.debug('rmdir(%s)' % (path))
+
+		if tree_cache.get(path).contents:
+			return -errno.ENOTEMPTY # Directory is not empty
+
+		# Update tree cache and parent
+		tree_cache.remove(path)
+		tree_cache.get(os.path.dirname(path)).contents.remove(os.path.basename(path))
+
+		# Sync with backend
+		background.do('syncdir', path=path, remove=True)
+
+	def chmod(self, path, mode):
+		logger.debug('chmod(%s, %s)' % (path, oct(mode)))
+
 	def get_cache_file(self, path):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
@@ -271,13 +287,16 @@ class BackgroundWorker:
 			shutil.copy(cache_file, root_file)
 			os.chmod(root_file, tree_cache.get(path).stat.st_mode & 0777)
 
-	def task_syncdir(self, path):
+	def task_syncdir(self, path, remove=False):
 		logger.debug('Syncing %s' % (path,))
 
 		root_dir = root + path
 
-		os.mkdir(root_dir)
-		os.chmod(root_dir, os.stat(mountpoint + path).st_mode & 0777)
+		if remove:
+			os.rmdir(root_dir)
+		else:
+			os.mkdir(root_dir)
+			os.chmod(root_dir, os.stat(mountpoint + path).st_mode & 0777)
 
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))

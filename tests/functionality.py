@@ -1,6 +1,6 @@
 import unittest
 import subprocess, os, time
-import sys, tempfile, shutil
+import sys, tempfile, shutil, errno
 
 class TestMissterOperationsLocal(unittest.TestCase):
 	misster = None
@@ -126,3 +126,14 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		self.assertIn('level6', os.listdir(self.tmp_path + '/mount/level4/level5'))
 		time.sleep(1)
 		self.assertTrue(os.path.exists(self.tmp_path + '/source/level4/level5/level6'))
+
+	def test_009_rmdir(self):
+		"""Removing a directory possible, most times"""
+		with self.assertRaises(OSError) as e:
+			os.rmdir(self.tmp_path + '/mount/level4')
+		self.assertEqual(e.exception.errno, errno.ENOTEMPTY)
+
+		os.rmdir(self.tmp_path + '/mount/level4/level5/level6')
+		self.assertNotIn('level6', os.listdir(self.tmp_path + '/mount/level4/level5'))
+		time.sleep(1)
+		self.assertNotIn('level6', os.listdir(self.tmp_path + '/source/level4/level5'))
