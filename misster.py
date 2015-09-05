@@ -133,6 +133,16 @@ class Misster(fuse.Fuse):
 		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, filehandle))
 		f = descriptor_cache.get(path)
 		f.seek(offset)
+
+		# Update changed cached attributes immediately
+		entry = tree_cache.get(path)
+		stat = MutableStatResult(os.stat(self.get_cache_file(path)))
+		entry.stat.st_size = stat.st_size
+		entry.stat.st_atime = time.time()
+		tree_cache.set(path, entry)
+
+		logger.debug('updated st_atime to %d for %s' % (tree_cache.get(path).stat.st_atime, path))
+
 		return f.read(length)
 
 	def write(self, path, data, offset, filehandle):
@@ -145,9 +155,11 @@ class Misster(fuse.Fuse):
 		entry = tree_cache.get(path)
 		stat = MutableStatResult(os.stat(self.get_cache_file(path)))
 		entry.stat.st_size = stat.st_size
+		entry.stat.st_mtime = time.time()
 		tree_cache.set(path, entry)
 
 		logger.debug('updated st_size to %d for %s' % (tree_cache.get(path).stat.st_size, path))
+		logger.debug('updated st_mtime to %d for %s' % (tree_cache.get(path).stat.st_mtime, path))
 
 		return len(data)
 
@@ -286,7 +298,7 @@ class BackgroundWorker:
 		if not os.path.exists(cache_file):
 			os.remove(root_file)
 		else:
-			shutil.copy(cache_file, root_file)
+			shutil.copy2(cache_file, root_file)
 			os.chmod(root_file, tree_cache.get(path).stat.st_mode & 0777)
 
 	def task_syncdir(self, path, remove=False):
