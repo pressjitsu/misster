@@ -137,3 +137,10 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		self.assertNotIn('level6', os.listdir(self.tmp_path + '/mount/level4/level5'))
 		time.sleep(1)
 		self.assertNotIn('level6', os.listdir(self.tmp_path + '/source/level4/level5'))
+
+	def test_010_chmod(self):
+		"""File and directory modes are set and propagated correctly"""
+		os.chmod(self.tmp_path + '/mount/file1', 0600)
+		self.assertEqual(os.stat(self.tmp_path + '/mount/file1').st_mode & 0777, 0600)
+		time.sleep(1)
+		self.assertEqual(os.stat(self.tmp_path + '/source/file1').st_mode & 0777, 0600)

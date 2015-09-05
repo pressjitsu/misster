@@ -243,6 +243,12 @@ class Misster(fuse.Fuse):
 	def chmod(self, path, mode):
 		logger.debug('chmod(%s, %s)' % (path, oct(mode)))
 
+		# Update tree
+		tree_cache.get(path).stat.st_mode = mode
+
+		# Sync with backend
+		background.do('syncmod', path=path)
+
 	def get_cache_file(self, path):
 		key = hashlib.sha1(path).hexdigest()
 		return cache_path + key[:2] + '/' + key[2:]
@@ -297,6 +303,11 @@ class BackgroundWorker:
 		else:
 			os.mkdir(root_dir)
 			os.chmod(root_dir, os.stat(mountpoint + path).st_mode & 0777)
+
+	def task_syncmod(self, path):
+		logger.debug('Syncing %s' % (path,))
+
+		os.chmod(root + path, os.stat(mountpoint + path).st_mode & 0777)
 
 if __name__ == '__main__':
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
