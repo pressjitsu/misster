@@ -125,7 +125,7 @@ class Misster(fuse.Fuse):
 
 		filehandle = os.fdopen(os.open(cache_file, flags), humanflags)
 
-		descriptor_cache.set(path, filehandle)
+		descriptor_cache.set(path, filehandle) # TODO: don't we collide here?!
 		return filehandle
 
 	def release(self, path, flags, f=None):
@@ -354,7 +354,9 @@ class CacheClearer(Thread):
 				for path in filter(lambda s: tree_cache.get(s).type == stat.S_IFREG, sorted(tree_cache.storage, key=lambda s: max(tree_cache.get(s).stat.st_mtime, tree_cache.get(s).stat.st_atime))):
 					cache_file = Misster.get_cache_file(path)
 					if not os.path.exists(cache_file):
-						continue
+						continue # Skip uncached files
+					if descriptor_cache.get(path):
+						continue # Skip open files
 					os.remove(cache_file)
 					removed = removed + tree_cache.get(path).stat.st_size
 					if removed > (du - down):
