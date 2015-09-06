@@ -212,7 +212,9 @@ class Misster(fuse.Fuse):
 		tree_cache.get(os.path.dirname(path)).contents.remove(os.path.basename(path))
 
 		# Remove cache file
-		os.remove(self.get_cache_file(path))
+		cache_file = self.get_cache_file(path)
+		if os.path.exists(cache_file):
+			os.remove(cache_file)
 
 		# Sync with backend
 		background.do('sync', path=path, cache_file=self.get_cache_file(path))
