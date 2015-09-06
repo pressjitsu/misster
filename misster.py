@@ -109,7 +109,17 @@ class Misster(fuse.Fuse):
 		else:
 			logger.debug('cache hit %s for %s' % (cache_file, path))
 
-		humanflags = ('r' if flags & os.O_RDONLY else '') + ('w' if flags & os.O_WRONLY else '') + ('a' if flags & os.O_APPEND else '')
+		# Convert flags to human-readable form
+		humanflags = 'r' if flags & os.O_RDONLY else ''
+		if not humanflags and flags & os.O_WRONLY:
+			humanflags = 'a' if flags & os.O_APPEND else 'w'
+		if not humanflags:
+			if flags & os.O_RDWR:
+				humanflags = 'w+' if flags & os.O_CREAT else 'r+'
+				if flags & os.O_APPEND:
+					humanflags = 'a+'
+			elif flags & os.O_APPEND:
+				humanflags = 'a'
 		if not humanflags:
 			humanflags = 'r'
 
@@ -291,6 +301,8 @@ class BackgroundWorker:
 				logger.debug('Done %r' % task)
 			except AttributeError:
 				logger.error('Unknown task %r' % task)
+			except Exception as e:
+				logger.error('Unhandled exception %r for %r' % (e, task))
 			finally:
 				self.tasks.task_done()
 
