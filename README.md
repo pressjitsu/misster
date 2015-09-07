@@ -7,6 +7,8 @@ Originally used with glusterfs (miss + gluster = misster).
 
 Should be thread-safe.
 
+*WARNING*: this is a development version, please backup your files. We do not guarantee data integrity, safety, or anything else for that matter. Seriously.
+
 Usage
 -----
 
