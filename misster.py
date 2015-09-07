@@ -55,10 +55,6 @@ class TreeCache(SynchronizedCache):
 	pass
 
 
-class DescriptorCache(SynchronizedCache):
-	"""Stores open files and descriptors."""
-	pass
-
 class Misster(fuse.Fuse):
 
 	def readdir(self, path, offset):
@@ -125,28 +121,39 @@ class Misster(fuse.Fuse):
 
 		filehandle = os.fdopen(os.open(cache_file, flags), humanflags)
 
-		descriptor_cache.set(path, filehandle) # TODO: don't we collide here?!
+		# Create filehandle lock for future use by FUSE threads
+		tree_cache.get(path).locks['fd'][filehandle.fileno()] = Lock()
+
 		return filehandle
 
 	def release(self, path, flags, f=None):
 		logger.debug('release(%s, %r, %r)' % (path, flags, f))
-		f = descriptor_cache.get(path)
-		f.close()
+
+		entry = tree_cache.get(path)
+		with entry.locks['fd'][f.fileno()]:
+			del entry.locks['fd'][f.fileno()]
+			f.close()
+
+		if f.mode == 'r': # we don't want to sync O_RDONLY
+			return
 
 		# Update changed cached attributes immediately
-		entry = tree_cache.get(path)
 		stat = MutableStatResult(os.stat(self.get_cache_file(path)))
 		entry.stat.st_size = stat.st_size
 		tree_cache.set(path, entry)
 
 		logger.debug('updated st_size to %d for %s' % (tree_cache.get(path).stat.st_size, path))
 
+		# Synchronize with backend
 		background.do('sync', path=path, cache_file=self.get_cache_file(path))
 
-	def read(self, path, length, offset, filehandle):
-		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, filehandle))
-		f = descriptor_cache.get(path)
-		f.seek(offset)
+	def read(self, path, length, offset, f):
+		logger.debug('read(%s, %d, %d, %r)' % (path, length, offset, f))
+
+		entry = tree_cache.get(path)
+		with entry.locks['fd'][f.fileno()]:
+			f.seek(offset)
+			read = f.read(length)
 
 		# Update changed cached attributes immediately
 		entry = tree_cache.get(path)
@@ -157,13 +164,15 @@ class Misster(fuse.Fuse):
 
 		logger.debug('updated st_atime to %d for %s' % (tree_cache.get(path).stat.st_atime, path))
 
-		return f.read(length)
+		return read
 
-	def write(self, path, data, offset, filehandle):
-		logger.debug('write(%s, %d bytes, %d, %r)' % (path, len(data), offset, filehandle))
-		f = descriptor_cache.get(path)
-		f.seek(offset)
-		f.write(data)
+	def write(self, path, data, offset, f):
+		logger.debug('write(%s, %d bytes, %d, %r)' % (path, len(data), offset, f))
+
+		entry = tree_cache.get(path)
+		with entry.locks['fd'][f.fileno()]:
+			f.seek(offset)
+			f.write(data)
 
 		# Update changed cached attributes immediately (unflushed)
 		entry = tree_cache.get(path)
@@ -176,6 +185,13 @@ class Misster(fuse.Fuse):
 		logger.debug('updated st_mtime to %d for %s' % (tree_cache.get(path).stat.st_mtime, path))
 
 		return len(data)
+
+	def truncate(self, path, offset):
+		logger.debug('truncate(%s, %d)' % (path, offset))
+		f = self.open(path, os.O_RDWR | os.O_APPEND)
+		# Here be deadlocks if you use the standard open() and we don't know why
+		f.truncate(offset)
+		f.close()
 
 	def mknod(self, path, mode, dev):
 		logger.debug('mknod(%s, %s, %r)' % (path, oct(mode), dev))
@@ -199,6 +215,7 @@ class Misster(fuse.Fuse):
 		entry.stat.st_mode = mode # Overwrite mode and ownership
 		entry.stat.st_uid = self.GetContext().get('uid', entry.stat.st_uid)
 		entry.stat.st_gid = self.GetContext().get('gid', entry.stat.st_gid)
+		entry.locks = { 'r': Lock(), 'w': Lock(), 'fd': {} }
 		tree_cache.set(path, entry)
 
 		# Update parent tree contents
@@ -209,11 +226,6 @@ class Misster(fuse.Fuse):
 
 		return node
 	
-	def truncate(self, path, offset):
-		logger.debug('truncate(%s, %d)' % (path, offset))
-		f = descriptor_cache.get(path)
-		f.truncate(offset)
-
 	def unlink(self, path):
 		logger.debug('unlink(%s)' % (path,))
 		
@@ -236,6 +248,7 @@ class Misster(fuse.Fuse):
 		entry = fuse.Direntry(os.path.basename(path))
 		entry.type = stat.S_IFDIR
 		entry.contents = []
+		entry.locks = { 'r': Lock(), 'w': Lock() }
 		entry.stat = MutableStatResult(os.stat(os.path.dirname(mountpoint + path))) # Inherit parent but change mode and time
 		entry.stat.st_mode = mode # Overwrite mode and ownership
 		entry.stat.st_uid = self.GetContext().get('uid', entry.stat.st_uid)
@@ -355,7 +368,7 @@ class CacheClearer(Thread):
 					cache_file = Misster.get_cache_file(path)
 					if not os.path.exists(cache_file):
 						continue # Skip uncached files
-					if descriptor_cache.get(path):
+					if tree_cache.get(path).locks['fd']:
 						continue # Skip open files
 					os.remove(cache_file)
 					removed = removed + tree_cache.get(path).stat.st_size
@@ -366,8 +379,9 @@ class CacheClearer(Thread):
 	
 
 if __name__ == '__main__':
-	# Parse arguments
 	m = Misster()
+
+	# Parse arguments
 	m.parser.add_option('-c', dest='cache_path', help='local file cache directory')
 	m.parser.add_option('-r', dest='rootpoint', help='source mount root')
 	m.parser.add_option('-t', dest='threads', help='number of background worker threads', default='1')
@@ -406,8 +420,6 @@ if __name__ == '__main__':
 
 	print('Warming tree cache up. Might take a while...')
 
-	descriptor_cache = DescriptorCache()
-
 	# Warm up
 	tree_cache = TreeCache()
 	logger.info('Warming up cache for %s' % root)
@@ -417,6 +429,7 @@ if __name__ == '__main__':
 		path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
 		entry = fuse.Direntry(os.path.basename(path))
 		entry.type = stat.S_IFDIR
+		entry.locks = { 'r': Lock(), 'w': Lock() }
 		if not entry.name:
 			entry.name = '.'
 		entry.contents = dirs + files
@@ -426,6 +439,7 @@ if __name__ == '__main__':
 		for f in files:
 			entry = fuse.Direntry(f)
 			entry.type = stat.S_IFREG
+			entry.locks = { 'r': Lock(), 'w': Lock(), 'fd': {} }
 			entry.stat = MutableStatResult(os.stat(root + path + f))
 			tree_cache.set(path + f, entry)
 

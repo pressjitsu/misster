@@ -162,3 +162,16 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		time.sleep(1)
 		self.assertNotEqual(os.stat(self.tmp_path + '/source/file1').st_atime, s_atime)
 		self.assertNotEqual(os.stat(self.tmp_path + '/source/file1').st_mtime, s_mtime)
+
+	def test_12_partial_reads(self):
+		"""Make sure partial reading yields the correct results due to threading"""
+		BLOCK = 131072
+		STRING_A = "a" * BLOCK
+		STRING_B = "b" * BLOCK
+		with open(self.tmp_path + '/mount/file0', 'w') as f:
+			f.write(STRING_A)
+			f.write(STRING_B)
+
+		f = os.open(self.tmp_path + '/mount/file0', os.O_RDONLY)
+		self.assertTrue(os.read(f, BLOCK) == STRING_A)
+		self.assertTrue(os.read(f, BLOCK) == STRING_B)
