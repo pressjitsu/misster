@@ -403,7 +403,11 @@ if __name__ == '__main__':
 	if not root or not os.access(root, os.F_OK | os.R_OK | os.W_OK | os.X_OK ):
 		m.parser.error('Invalid source mount root')
 	if not os.access(log_file, os.F_OK | os.R_OK | os.W_OK ):
-		m.parser.error('Invalid log file')
+		try:
+			with open(log_file, 'w') as f:
+				pass # Create if not exists
+		except OSError, IOError:
+			m.parser.error('Invalid log file')
 	if cache_limit < 0:
 		m.parser.error('Cache size limit should be 0 or more bytes')
 	root = root.rstrip('/') + '/'
