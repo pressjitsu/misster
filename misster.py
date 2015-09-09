@@ -62,6 +62,38 @@ class Misster(fuse.Fuse):
 
 		entry = tree_cache.get(path)
 		contents = entry.contents if entry else []
+		if contents is None:
+			# Contents for this directory have not been fetched yet
+			logger.debug('Fetching %s tree items...' % path)
+			_path = path
+			for path, dirs, files in os.walk(root + path):
+				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
+				path = '/' + path.lstrip('/')
+				entry = fuse.Direntry(os.path.basename(path))
+				entry.type = stat.S_IFDIR
+				entry.stat = None
+				if not entry.name:
+					entry.name = '.'
+				entry.contents = dirs + files
+				tree_cache.set(path.rstrip('/') or '/', entry)
+
+				for d in dirs:
+					entry = fuse.Direntry(d)
+					entry.type = stat.S_IFDIR
+					entry.stat = None
+					entry.contents = None
+					tree_cache.set(path + d, entry)
+
+				for f in files:
+					entry = fuse.Direntry(f)
+					entry.type = stat.S_IFREG
+					entry.stat = None
+					entry.locks = { 'fd': {} }
+					tree_cache.set(path + f, entry)
+				break # Only interested in this path and its contents, don't drill deeper
+			path = _path
+			entry = tree_cache.get(path)
+			contents = entry.contents if entry else []
 		directories = ['.', '..'] + contents
 		for directory in directories:
 			yield fuse.Direntry(directory)
@@ -70,9 +102,49 @@ class Misster(fuse.Fuse):
 		logger.debug('getattr(%s)' % (path))
 
 		entry = tree_cache.get(path)
-
 		if not entry:
-			return -errno.ENOENT
+			# Entry might not have been cached yet, let's look up the parent
+			if tree_cache.get(os.path.dirname(path)):
+				return -errno.ENOENT # Parent exists, file is not inside there obviously (we just checked)
+			# Let's scan the parent directory and add the contents then
+
+			logger.debug('Fetching %s tree items...' % path)
+			_path = path
+			for path, dirs, files in os.walk(root + os.path.dirname(path)):
+				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
+				path = '/' + path.lstrip('/')
+				entry = fuse.Direntry(os.path.basename(path))
+				entry.type = stat.S_IFDIR
+				entry.stat = None
+				if not entry.name:
+					entry.name = '.'
+				entry.contents = dirs + files
+				tree_cache.set(path.rstrip('/') or '/', entry)
+
+				for d in dirs:
+					entry = fuse.Direntry(d)
+					entry.type = stat.S_IFDIR
+					entry.stat = None
+					entry.contents = None
+					tree_cache.set(path + d, entry)
+
+				for f in files:
+					entry = fuse.Direntry(f)
+					entry.type = stat.S_IFREG
+					entry.stat = None
+					entry.locks = { 'fd': {} }
+					tree_cache.set(path + f, entry)
+				break # Only interested in the parent and its contents, don't drill deeper
+			path = _path
+
+			entry = tree_cache.get(path)
+			# Aaaand tt's not there regardless of our efforts...
+			if not entry:
+				return -errno.ENOENT # Parent exists, file is not inside there obviously (we just checked)
+
+		# Fetch and cache stat data for the requested item if not available
+		if not entry.stat:
+			entry.stat = MutableStatResult(os.stat(root + path))
 
 		s = fuse.Stat()
 		s.st_mode  = entry.type | entry.stat.st_mode # (protection bits)
@@ -364,7 +436,7 @@ class CacheClearer(Thread):
 
 				removed = 0
 				# Sort through the items to find least recently accessed or modified
-				for path in filter(lambda s: tree_cache.get(s).type == stat.S_IFREG, sorted(tree_cache.storage, key=lambda s: max(tree_cache.get(s).stat.st_mtime, tree_cache.get(s).stat.st_atime))):
+				for path in filter(lambda s: tree_cache.get(s).type == stat.S_IFREG, sorted(filter(lambda s: tree_cache.get(s).stat, tree_cache.storage), key=lambda s: max(tree_cache.get(s).stat.st_mtime, tree_cache.get(s).stat.st_atime))):
 					cache_file = Misster.get_cache_file(path)
 					if not os.path.exists(cache_file):
 						continue # Skip uncached files
@@ -422,33 +494,9 @@ if __name__ == '__main__':
 
 	logger.info('Starting misster with arguments: %s' % ' '.join(sys.argv[1:]))
 
-	print('Warming tree cache up. Might take a while...')
-
-	# Warm up
+	# This cache contains known and prefetched tree elements
 	tree_cache = TreeCache()
-	logger.info('Warming up cache for %s' % root)
 	
-	# Walk the tree getting the stats
-	for path, dirs, files in os.walk(root):
-		path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
-		entry = fuse.Direntry(os.path.basename(path))
-		entry.type = stat.S_IFDIR
-		entry.locks = { 'r': Lock(), 'w': Lock() }
-		if not entry.name:
-			entry.name = '.'
-		entry.contents = dirs + files
-		entry.stat = MutableStatResult(os.stat(root + path))
-		tree_cache.set(path.rstrip('/') or '/', entry)
-
-		for f in files:
-			entry = fuse.Direntry(f)
-			entry.type = stat.S_IFREG
-			entry.locks = { 'r': Lock(), 'w': Lock(), 'fd': {} }
-			entry.stat = MutableStatResult(os.stat(root + path + f))
-			tree_cache.set(path + f, entry)
-
-	logger.info('Cached %d tree elements' % len(tree_cache.storage))
-
 	print('Starting %d background workers...' % threads)
 
 	background = BackgroundWorker(threads)
