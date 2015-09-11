@@ -413,12 +413,12 @@ class BackgroundWorker:
 		if remove:
 			os.rmdir(root_dir)
 		else:
-			os.mkdir(root_dir, os.stat(mountpoint + path).st_mode & 0777)
+			os.mkdir(root_dir, tree_cache.get(path).stat.st_mode & 0777)
 
 	def task_syncmod(self, path):
 		logger.debug('Syncing %s' % (path,))
 
-		os.chmod(root + path, os.stat(mountpoint + path).st_mode & 0777)
+		os.chmod(root + path, tree_cache.get(path).stat.st_mode & 0777)
 
 
 class CacheClearer(Thread):
