@@ -150,9 +150,9 @@ class TestMissterOperationsLocal(unittest.TestCase):
 	def test_011_time(self):
 		"""atime and mtime change as files are accessed and modified"""
 		# TODO: ctime for chmods should also work, and directories...
+		# TODO: atime propagation depends on underlying fs really (noatime)
 		atime = os.stat(self.tmp_path + '/mount/file1').st_atime
 		mtime = os.stat(self.tmp_path + '/mount/file1').st_mtime
-		s_atime = os.stat(self.tmp_path + '/source/file1').st_atime
 		s_mtime = os.stat(self.tmp_path + '/source/file1').st_mtime
 		time.sleep(1)
 		open(self.tmp_path + '/mount/file1').read()
@@ -160,7 +160,6 @@ class TestMissterOperationsLocal(unittest.TestCase):
 		open(self.tmp_path + '/mount/file1', 'w').write('hello')
 		self.assertNotEqual(os.stat(self.tmp_path + '/mount/file1').st_mtime, mtime)
 		time.sleep(1)
-		self.assertNotEqual(os.stat(self.tmp_path + '/source/file1').st_atime, s_atime)
 		self.assertNotEqual(os.stat(self.tmp_path + '/source/file1').st_mtime, s_mtime)
 
 	def test_12_partial_reads(self):
