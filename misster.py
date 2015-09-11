@@ -141,6 +141,38 @@ class Misster(fuse.Fuse):
 			# Aaaand tt's not there regardless of our efforts...
 			if not entry:
 				return -errno.ENOENT # Parent exists, file is not inside there obviously (we just checked)
+		elif entry.type == stat.S_IFDIR and entry.contents is None:
+			# TODO: refactor please
+			# Contents for this directory have not been fetched yet
+			logger.debug('Fetching %s tree items...' % path)
+			_path = path
+			for path, dirs, files in os.walk(root + path):
+				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
+				path = '/' + path.lstrip('/')
+				entry = fuse.Direntry(os.path.basename(path))
+				entry.type = stat.S_IFDIR
+				entry.stat = None
+				if not entry.name:
+					entry.name = '.'
+				entry.contents = dirs + files
+				tree_cache.set(path.rstrip('/') or '/', entry)
+
+				for d in dirs:
+					entry = fuse.Direntry(d)
+					entry.type = stat.S_IFDIR
+					entry.stat = None
+					entry.contents = None
+					tree_cache.set(path + d, entry)
+
+				for f in files:
+					entry = fuse.Direntry(f)
+					entry.type = stat.S_IFREG
+					entry.stat = None
+					entry.locks = { 'fd': {} }
+					tree_cache.set(path + f, entry)
+				break # Only interested in this path and its contents, don't drill deeper
+			path = _path
+			entry = tree_cache.get(path)
 
 		# Fetch and cache stat data for the requested item if not available
 		if not entry.stat:
