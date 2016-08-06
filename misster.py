@@ -514,7 +514,7 @@ if __name__ == '__main__':
 			m.parser.error('Invalid log file')
 	if cache_limit < 0:
 		m.parser.error('Cache size limit should be 0 or more bytes')
-	root = root.rstrip('/') + '/'
+	root = os.path.abspath(root.rstrip('/') + '/')
 
 	# Logging
 	logger = logging.getLogger('misster')
