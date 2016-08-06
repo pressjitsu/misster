@@ -9,6 +9,8 @@ Should be thread-safe.
 
 *WARNING*: this is a development version, please backup your files. We do not guarantee data integrity, safety, or anything else for that matter. Seriously.
 
+*CAUTION*: on 64-bit systems with Python compiled without LFS support this utility will break, since inodes will overflow. Launch gluster without LFS support in such cases using the `enable-ino32` flag.
+
 Usage
 -----
 
