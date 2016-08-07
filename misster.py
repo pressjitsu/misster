@@ -61,122 +61,33 @@ class Misster(fuse.Fuse):
 		logger.debug('readdir(%s)' % (path))
 
 		entry = tree_cache.get(path)
+
 		contents = entry.contents if entry else []
 		if contents is None:
 			# Contents for this directory have not been fetched yet
-			logger.debug('Fetching %s tree items...' % path)
-			_path = path
-			for path, dirs, files in os.walk(root + path):
-				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
-				path = '/' + path.lstrip('/')
-				entry = fuse.Direntry(os.path.basename(path))
-				entry.type = stat.S_IFDIR
-				entry.stat = None
-				if not entry.name:
-					entry.name = '.'
-				entry.contents = dirs + files
-				tree_cache.set(path.rstrip('/') or '/', entry)
-
-				for d in dirs:
-					entry = fuse.Direntry(d)
-					entry.type = stat.S_IFDIR
-					entry.stat = None
-					entry.contents = None
-					tree_cache.set(path + d, entry)
-
-				for f in files:
-					entry = fuse.Direntry(f)
-					entry.type = stat.S_IFREG
-					entry.stat = None
-					entry.locks = { 'fd': {} }
-					tree_cache.set(path + f, entry)
-				break # Only interested in this path and its contents, don't drill deeper
-			path = _path
-			entry = tree_cache.get(path)
-			contents = entry.contents if entry else []
-		directories = ['.', '..'] + contents
-		for directory in directories:
-			yield fuse.Direntry(directory)
+			entry.contents = ['.', '..'] + os.listdir(root + path)
+			tree_cache.set(path, entry)
+		
+		for path in entry.contents:
+			yield fuse.Direntry(path)
 
 	def getattr(self, path):
 		logger.debug('getattr(%s)' % (path))
 
 		entry = tree_cache.get(path)
+
 		if not entry:
-			# Entry might not have been cached yet, let's look up the parent
-			if tree_cache.get(os.path.dirname(path)):
-				return -errno.ENOENT # Parent exists, file is not inside there obviously (we just checked)
-			# Let's scan the parent directory and add the contents then
-
-			logger.debug('Fetching %s tree items...' % path)
-			_path = path
-			for path, dirs, files in os.walk(root + os.path.dirname(path)):
-				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
-				path = '/' + path.lstrip('/')
-				entry = fuse.Direntry(os.path.basename(path))
-				entry.type = stat.S_IFDIR
-				entry.stat = None
-				if not entry.name:
-					entry.name = '.'
-				entry.contents = dirs + files
-				tree_cache.set(path.rstrip('/') or '/', entry)
-
-				for d in dirs:
-					entry = fuse.Direntry(d)
-					entry.type = stat.S_IFDIR
-					entry.stat = None
-					entry.contents = None
-					tree_cache.set(path + d, entry)
-
-				for f in files:
-					entry = fuse.Direntry(f)
-					entry.type = stat.S_IFREG
-					entry.stat = None
-					entry.locks = { 'fd': {} }
-					tree_cache.set(path + f, entry)
-				break # Only interested in the parent and its contents, don't drill deeper
-			path = _path
-
-			entry = tree_cache.get(path)
-			# Aaaand tt's not there regardless of our efforts...
-			if not entry:
-				return -errno.ENOENT # Parent exists, file is not inside there obviously (we just checked)
-		elif entry.type == stat.S_IFDIR and entry.contents is None:
-			# TODO: refactor please
-			# Contents for this directory have not been fetched yet
-			logger.debug('Fetching %s tree items...' % path)
-			_path = path
-			for path, dirs, files in os.walk(root + path):
-				path = path.replace(root, '/', 1).rstrip('/') + '/' # Strip the root relation
-				path = '/' + path.lstrip('/')
-				entry = fuse.Direntry(os.path.basename(path))
-				entry.type = stat.S_IFDIR
-				entry.stat = None
-				if not entry.name:
-					entry.name = '.'
-				entry.contents = dirs + files
-				tree_cache.set(path.rstrip('/') or '/', entry)
-
-				for d in dirs:
-					entry = fuse.Direntry(d)
-					entry.type = stat.S_IFDIR
-					entry.stat = None
-					entry.contents = None
-					tree_cache.set(path + d, entry)
-
-				for f in files:
-					entry = fuse.Direntry(f)
-					entry.type = stat.S_IFREG
-					entry.stat = None
-					entry.locks = { 'fd': {} }
-					tree_cache.set(path + f, entry)
-				break # Only interested in this path and its contents, don't drill deeper
-			path = _path
-			entry = tree_cache.get(path)
-
-		# Fetch and cache stat data for the requested item if not available
-		if not entry.stat:
+			# Prepare the entry
+			entry = fuse.Direntry(path)
 			entry.stat = MutableStatResult(os.stat(root + path))
+			entry.type = stat.S_IFDIR if stat.S_ISDIR(entry.stat.st_mode) else stat.S_IFREG
+			if not entry.name:
+				entry.name = '.'
+			entry.contents = None
+			if entry.type == stat.S_IFREG:
+				entry.locks = { 'fd': {} }
+			
+			tree_cache.set(path, entry)
 
 		s = fuse.Stat()
 		s.st_mode  = entry.type | entry.stat.st_mode # (protection bits)
